@@ -1,3 +1,5 @@
+const String appVersion = '1.0.0';
+
 enum Repeat { none, daily, weekly, monthly }
 
 enum AppThemeStyle {

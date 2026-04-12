@@ -76,7 +76,7 @@ class SettingsPage extends StatelessWidget {
           Padding(padding: const EdgeInsets.all(16), child: Text("Corner Radius: ${s.radius.toInt()}px", style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold))),
           Slider(value: s.radius, min: 0, max: 48, onChanged: (v) => s.updateCornerRadius(v)),
           const SizedBox(height: 40),
-          const Center(child: Text("v12.1.0 (Full Palette Preview)", style: TextStyle(color: Colors.grey)))
+          Center(child: Text("v$appVersion", style: TextStyle(color: Colors.grey)))
         ]));
   }
 }

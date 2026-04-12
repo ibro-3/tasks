@@ -1,34 +1,38 @@
-import 'dart:convert';
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 
 import 'models/enums.dart';
-import 'models/task.dart';
-import 'models/task_list.dart';
 import 'services/notification_service.dart';
+import 'services/task_repository.dart';
+import 'providers/task_provider.dart';
 import 'screens/home_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.init();
+  final prefs = await SharedPreferences.getInstance();
+  
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     systemNavigationBarColor: Colors.transparent,
   ));
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  runApp(const TaskApp());
+  
+  runApp(TaskApp(prefs: prefs));
 }
 
 class TaskApp extends StatefulWidget {
-  const TaskApp({super.key});
+  final SharedPreferences prefs;
+  const TaskApp({super.key, required this.prefs});
   @override State<TaskApp> createState() => TaskAppState();
 }
 
 class TaskAppState extends State<TaskApp> {
+  late final TaskProvider _taskProvider;
+  late final TaskRepository _repository;
+  
   ThemeMode themeMode = ThemeMode.system;
   AppThemeStyle currentStyle = AppThemeStyle.blue;
   double radius = 32.0;
@@ -37,10 +41,15 @@ class TaskAppState extends State<TaskApp> {
   bool isOled = false;
   Color? systemSeedColor; 
 
-  @override void initState() { super.initState(); _loadPrefs(); }
+  @override void initState() { 
+    super.initState(); 
+    _repository = TaskRepository(widget.prefs);
+    _taskProvider = TaskProvider(_repository);
+    _loadPrefs(); 
+  }
 
   Future<void> _loadPrefs() async {
-    final p = await SharedPreferences.getInstance();
+    final p = widget.prefs;
     setState(() {
       if (p.getString('theme_mode') != null) themeMode = ThemeMode.values.firstWhere((e) => e.toString() == p.getString('theme_mode'));
       if (p.getString('theme_style') != null) currentStyle = AppThemeStyle.values.firstWhere((e) => e.toString() == p.getString('theme_style'), orElse: () => AppThemeStyle.blue);
@@ -51,7 +60,13 @@ class TaskAppState extends State<TaskApp> {
     });
   }
 
-  void _save(String key, dynamic value) async { final p = await SharedPreferences.getInstance(); if (value is String) p.setString(key, value); else if (value is int) p.setInt(key, value); else if (value is double) p.setDouble(key, value); else if (value is bool) p.setBool(key, value); }
+  void _save(String key, dynamic value) async { 
+    if (value is String) widget.prefs.setString(key, value); 
+    else if (value is int) widget.prefs.setInt(key, value); 
+    else if (value is double) widget.prefs.setDouble(key, value); 
+    else if (value is bool) widget.prefs.setBool(key, value); 
+  }
+  
   void updateThemeMode(ThemeMode m) { setState(() => themeMode = m); _save('theme_mode', m.toString()); }
   void updateStyle(AppThemeStyle s) { setState(() => currentStyle = s); _save('theme_style', s.toString()); }
   void updateCornerRadius(double v) { setState(() => radius = v); _save('radius', v); }
@@ -76,8 +91,6 @@ class TaskAppState extends State<TaskApp> {
         default: seed = const Color(0xFF2979FF); 
       }
       
-      // v12.2: Use 'tonalSpot' for richer palettes (distinct secondary/tertiary colors)
-      // instead of 'fidelity' which can be too monochromatic.
       scheme = ColorScheme.fromSeed(
         seedColor: seed,
         brightness: b,
@@ -85,12 +98,11 @@ class TaskAppState extends State<TaskApp> {
       );
     }
 
-    // OLED Black Override
     if (isOled && b == Brightness.dark) {
       scheme = scheme.copyWith(
         surface: Colors.black,
-        surfaceContainer: const Color(0xFF121212), // Very dark grey for cards
-        surfaceContainerHigh: const Color(0xFF2C2C2C), // Lighter for dialogs
+        surfaceContainer: const Color(0xFF121212),
+        surfaceContainerHigh: const Color(0xFF2C2C2C),
       );
     }
 
@@ -102,26 +114,21 @@ class TaskAppState extends State<TaskApp> {
       visualDensity: isCompact ? VisualDensity.compact : VisualDensity.standard,
       splashFactory: InkSparkle.splashFactory,
       
-      // --- Strategic Component Theming ---
-      
-      // FAB uses Tertiary to "Pop" against the Primary UI
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: scheme.tertiaryContainer,
         foregroundColor: scheme.onTertiaryContainer,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), // Squircle default
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
 
-      // Checkboxes use Primary
       checkboxTheme: CheckboxThemeData(
         fillColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) return scheme.primary;
-          return null; // transparent border when unchecked
+          return null;
         }),
         shape: const CircleBorder(),
       ),
 
-      // Input fields use Surface Container High for depth
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: scheme.surfaceContainerHigh.withOpacity(0.5),
@@ -131,7 +138,6 @@ class TaskAppState extends State<TaskApp> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
       ),
 
-      // Cards use Surface Container Low (subtle distinction from background)
       cardTheme: CardTheme(
         elevation: 0,
         color: scheme.surfaceContainerLow, 
@@ -147,7 +153,7 @@ class TaskAppState extends State<TaskApp> {
       
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: scheme.inverseSurface, // High contrast
+        backgroundColor: scheme.inverseSurface,
         contentTextStyle: TextStyle(color: scheme.onInverseSurface, fontWeight: FontWeight.bold),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
         insetPadding: const EdgeInsets.all(24),
@@ -171,11 +177,11 @@ class TaskAppState extends State<TaskApp> {
         systemSeedColor = lightDynamic?.primary ?? darkDynamic?.primary;
         return MaterialApp(
           debugShowCheckedModeBanner: false,
-          title: 'Expressive Tasks v12.2',
+          title: 'Tasks $appVersion',
           themeMode: themeMode,
           theme: _buildTheme(Brightness.light, lightDynamic),
           darkTheme: _buildTheme(Brightness.dark, darkDynamic),
-          home: TaskHomePage(settings: this),
+          home: TaskHomePage(settings: this, taskProvider: _taskProvider),
         );
       }
     );
