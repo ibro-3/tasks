@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -36,10 +37,12 @@ class _TaskHomePageState extends State<TaskHomePage>
   bool _isSearchActive = false;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
+  Timer? _searchDebounce;
 
   DateTime _selectedDate = DateTime.now();
   late AnimationController _confettiController;
   final List<ConfettiParticle> _particles = [];
+  StreamSubscription<String?>? _notificationSubscription;
 
   @override
   void initState() {
@@ -55,21 +58,30 @@ class _TaskHomePageState extends State<TaskHomePage>
         _particles.clear();
       }
     });
-    _searchController.addListener(() {
-      setState(() {});
-    });
+    _searchController.addListener(_onSearchChanged);
     NotificationService.requestPermissions();
-    NotificationService.onNotificationTap.listen((taskId) {
+    _notificationSubscription = NotificationService.onNotificationTap.listen((
+      taskId,
+    ) {
       if (taskId != null) _handleNotificationTap(taskId);
+    });
+  }
+
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) setState(() {});
     });
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _confettiController.dispose();
     _searchController.dispose();
     _searchFocus.dispose();
+    _notificationSubscription?.cancel();
     super.dispose();
   }
 
@@ -86,16 +98,21 @@ class _TaskHomePageState extends State<TaskHomePage>
     _confettiController.forward(from: 0.0);
   }
 
-  void _handleNotificationTap(String taskId) {
+  Future<void> _handleNotificationTap(String taskId) async {
+    if (widget.taskProvider.tasks.isEmpty) {
+      await widget.taskProvider.loadData();
+    }
     try {
       final task = widget.taskProvider.tasks.firstWhere((t) => t.id == taskId);
+      if (!mounted) return;
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => TaskDetailScreen(
             task: task,
-            onUpdate: (nt) => widget.taskProvider.updateTask(nt),
-            onDelete: () => widget.taskProvider.updateTask(task, delete: true),
+            onUpdate: (nt) async => await widget.taskProvider.updateTask(nt),
+            onDelete: () async =>
+                await widget.taskProvider.updateTask(task, delete: true),
           ),
         ),
       );
@@ -104,13 +121,13 @@ class _TaskHomePageState extends State<TaskHomePage>
     }
   }
 
-  void _onTaskComplete(Task task, bool isCompleted) {
+  Future<void> _onTaskComplete(Task task, bool isCompleted) async {
     if (isCompleted) {
       _spawnConfetti();
       HapticFeedback.lightImpact();
       if (widget.settings.soundOn) SystemSound.play(SystemSoundType.click);
     }
-    widget.taskProvider.updateTask(task);
+    await widget.taskProvider.updateTask(task);
   }
 
   void _switchList(String name) => widget.taskProvider.switchList(name);
@@ -239,44 +256,37 @@ class _TaskHomePageState extends State<TaskHomePage>
   }
 
   double _calculateProgress(List<Task> tasks) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
     final todayTasks = tasks
         .where(
           (t) =>
               t.dueDate != null &&
-              t.dueDate!.day == DateTime.now().day &&
+              DateTime(
+                t.dueDate!.year,
+                t.dueDate!.month,
+                t.dueDate!.day,
+              ).isAtSameMomentAs(today) &&
               !t.isCompleted,
         )
         .length;
     final totalToday = tasks
-        .where((t) => t.dueDate != null && t.dueDate!.day == DateTime.now().day)
+        .where(
+          (t) =>
+              t.dueDate != null &&
+              DateTime(
+                t.dueDate!.year,
+                t.dueDate!.month,
+                t.dueDate!.day,
+              ).isAtSameMomentAs(today),
+        )
         .length;
     return totalToday == 0 ? 0.0 : todayTasks / totalToday;
   }
 
   Map<String, List<Task>> _groupTasks(List<Task> tasks) {
-    final grouped = <String, List<Task>>{};
-    for (var t in tasks) {
-      String key = "Later";
-      if (t.dueDate == null) {
-        key = 'No Date';
-      } else {
-        final d = DateTime(t.dueDate!.year, t.dueDate!.month, t.dueDate!.day);
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-        if (d.isBefore(today)) {
-          key = 'Overdue';
-        } else if (d.isAtSameMomentAs(today)) {
-          key = 'Today';
-        } else if (d.difference(today).inDays == 1) {
-          key = 'Tomorrow';
-        }
-      }
-      if (!grouped.containsKey(key)) {
-        grouped[key] = [];
-      }
-      grouped[key]!.add(t);
-    }
-    return grouped;
+    return TaskProvider.groupTasksByDate(tasks);
   }
 
   Widget _buildTaskList(
@@ -401,13 +411,17 @@ class _TaskHomePageState extends State<TaskHomePage>
                   if (i < flatList.length) return flatList[i];
                   return null;
                 },
-                childCount:
-                    activeTasks.length +
-                    ((currentList != 'My Day' || _isSearchActive)
-                        ? groupedTasks.keys
-                              .where((k) => groupedTasks[k]!.isNotEmpty)
-                              .length
-                        : 0),
+                childCount: () {
+                  int count = 0;
+                  for (var key in groupOrder) {
+                    if (groupedTasks[key] != null &&
+                        groupedTasks[key]!.isNotEmpty) {
+                      if (currentList != 'My Day' || _isSearchActive) count++;
+                      count += groupedTasks[key]!.length;
+                    }
+                  }
+                  return count;
+                }(),
               ),
             ),
           ),
@@ -432,13 +446,14 @@ class _TaskHomePageState extends State<TaskHomePage>
       ),
       confirmDismiss: (dir) async {
         if (dir == DismissDirection.startToEnd) {
-          task.isCompleted = !task.isCompleted;
-          _onTaskComplete(task, task.isCompleted);
+          final willBeCompleted = !task.isCompleted;
+          await _onTaskComplete(task, willBeCompleted);
           return false;
         }
         return true;
       },
-      onDismissed: (_) => widget.taskProvider.updateTask(task, delete: true),
+      onDismissed: (_) async =>
+          await widget.taskProvider.updateTask(task, delete: true),
       child: TactileTaskCard(
         task: task,
         settings: widget.settings,
@@ -448,14 +463,15 @@ class _TaskHomePageState extends State<TaskHomePage>
           MaterialPageRoute(
             builder: (_) => TaskDetailScreen(
               task: task,
-              onUpdate: (nt) => provider.updateTask(nt),
-              onDelete: () => provider.updateTask(task, delete: true),
+              onUpdate: (nt) async => await provider.updateTask(nt),
+              onDelete: () async =>
+                  await provider.updateTask(task, delete: true),
             ),
           ),
         ),
-        onCheck: () {
-          task.isCompleted = !task.isCompleted;
-          _onTaskComplete(task, task.isCompleted);
+        onCheck: () async {
+          final willBeCompleted = !task.isCompleted;
+          await _onTaskComplete(task, willBeCompleted);
         },
         onStar: () => provider.toggleStar(task),
       ),
@@ -707,7 +723,7 @@ class _TaskHomePageState extends State<TaskHomePage>
                     ),
                     const Spacer(),
                     FloatingActionButton.small(
-                      onPressed: () {
+                      onPressed: () async {
                         if (tc.text.isNotEmpty) {
                           DateTime? finalDate;
                           if (d != null) {
@@ -719,13 +735,13 @@ class _TaskHomePageState extends State<TaskHomePage>
                               t?.minute ?? 0,
                             );
                           }
-                          widget.taskProvider.addTask(
+                          await widget.taskProvider.addTask(
                             tc.text,
                             isStarred: isStarred,
                             dueDate: finalDate,
                             notes: nc.text,
                           );
-                          Navigator.pop(ctx);
+                          if (ctx.mounted) Navigator.pop(ctx);
                         }
                       },
                       child: const Icon(Icons.arrow_upward),

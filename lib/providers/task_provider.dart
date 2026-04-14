@@ -67,13 +67,13 @@ class TaskProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addTask(
+  Future<void> addTask(
     String title, {
     bool isStarred = false,
     DateTime? dueDate,
     String? notes,
     String? listName,
-  }) {
+  }) async {
     String finalTitle = title;
     DateTime? finalDate = dueDate;
 
@@ -98,7 +98,7 @@ class TaskProvider extends ChangeNotifier {
     }
 
     final newTask = Task(
-      id: DateTime.now().toString(),
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
       title: finalTitle,
       listName: targetList,
       isStarred: isStarred,
@@ -108,11 +108,11 @@ class TaskProvider extends ChangeNotifier {
 
     _tasks.add(newTask);
     NotificationService.schedule(newTask);
-    _saveTasks();
+    await _saveTasks();
     notifyListeners();
   }
 
-  void updateTask(Task task, {bool delete = false}) {
+  Future<void> updateTask(Task task, {bool delete = false}) async {
     if (delete) {
       _tasks.removeWhere((e) => e.id == task.id);
       NotificationService.cancel(task);
@@ -152,7 +152,7 @@ class TaskProvider extends ChangeNotifier {
           );
 
       final newTask = Task(
-        id: DateTime.now().toString(),
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
         title: task.title,
         listName: task.listName,
         dueDate: next,
@@ -163,14 +163,42 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
-  void toggleComplete(Task task) {
-    task.isCompleted = !task.isCompleted;
-    updateTask(task);
+  Future<void> toggleComplete(Task task) async {
+    final index = _tasks.indexWhere((t) => t.id == task.id);
+    if (index != -1) {
+      final existingTask = _tasks[index];
+      final updatedTask = Task(
+        id: existingTask.id,
+        title: existingTask.title,
+        isCompleted: !existingTask.isCompleted,
+        listName: existingTask.listName,
+        isStarred: existingTask.isStarred,
+        dueDate: existingTask.dueDate,
+        notes: existingTask.notes,
+        subTasks: existingTask.subTasks,
+        repeat: existingTask.repeat,
+      );
+      await updateTask(updatedTask);
+    }
   }
 
-  void toggleStar(Task task) {
-    task.isStarred = !task.isStarred;
-    updateTask(task);
+  Future<void> toggleStar(Task task) async {
+    final index = _tasks.indexWhere((t) => t.id == task.id);
+    if (index != -1) {
+      final existingTask = _tasks[index];
+      final updatedTask = Task(
+        id: existingTask.id,
+        title: existingTask.title,
+        isCompleted: existingTask.isCompleted,
+        listName: existingTask.listName,
+        isStarred: !existingTask.isStarred,
+        dueDate: existingTask.dueDate,
+        notes: existingTask.notes,
+        subTasks: existingTask.subTasks,
+        repeat: existingTask.repeat,
+      );
+      await updateTask(updatedTask);
+    }
   }
 
   void addList(TaskListModel list) {
@@ -179,14 +207,14 @@ class TaskProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void deleteList(String name) {
+  Future<void> deleteList(String name) async {
     _lists.removeWhere((l) => l.name == name);
     _tasks.removeWhere((t) => t.listName == name);
     if (_currentList == name) {
       _currentList = 'My Tasks';
     }
-    _saveLists();
-    _saveTasks();
+    await _saveLists();
+    await _saveTasks();
     notifyListeners();
   }
 
@@ -230,6 +258,32 @@ class TaskProvider extends ChangeNotifier {
       grouped[key]!.add(t);
     }
 
+    return grouped;
+  }
+
+  static Map<String, List<Task>> groupTasksByDate(List<Task> tasks) {
+    final grouped = <String, List<Task>>{};
+    for (var t in tasks) {
+      String key = "Later";
+      if (t.dueDate == null) {
+        key = "No Date";
+      } else {
+        final d = DateTime(t.dueDate!.year, t.dueDate!.month, t.dueDate!.day);
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        if (d.isBefore(today)) {
+          key = 'Overdue';
+        } else if (d.isAtSameMomentAs(today)) {
+          key = 'Today';
+        } else if (d.difference(today).inDays == 1) {
+          key = 'Tomorrow';
+        }
+      }
+      if (!grouped.containsKey(key)) {
+        grouped[key] = [];
+      }
+      grouped[key]!.add(t);
+    }
     return grouped;
   }
 

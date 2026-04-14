@@ -27,9 +27,61 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   void _save() {
-    widget.task.title = tC.text;
-    widget.task.notes = nC.text;
-    widget.onUpdate(widget.task);
+    final newTask = Task(
+      id: widget.task.id,
+      title: tC.text,
+      listName: widget.task.listName,
+      notes: nC.text,
+      isCompleted: widget.task.isCompleted,
+      isStarred: widget.task.isStarred,
+      dueDate: widget.task.dueDate,
+      repeat: widget.task.repeat,
+      subTasks: widget.task.subTasks,
+    );
+    widget.onUpdate(newTask);
+  }
+
+  void _toggleSubTask(SubTask subtask, bool? value) {
+    final updatedSubTasks = widget.task.subTasks.map((s) {
+      if (s.id == subtask.id) {
+        return SubTask(id: s.id, title: s.title, isCompleted: value ?? false);
+      }
+      return s;
+    }).toList();
+
+    final newTask = Task(
+      id: widget.task.id,
+      title: widget.task.title,
+      listName: widget.task.listName,
+      notes: widget.task.notes,
+      isCompleted: widget.task.isCompleted,
+      isStarred: widget.task.isStarred,
+      dueDate: widget.task.dueDate,
+      repeat: widget.task.repeat,
+      subTasks: updatedSubTasks,
+    );
+    widget.onUpdate(newTask);
+  }
+
+  void _addSubTask(String title) {
+    final newSubTask = SubTask(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      title: title,
+    );
+    final updatedSubTasks = [...widget.task.subTasks, newSubTask];
+
+    final newTask = Task(
+      id: widget.task.id,
+      title: widget.task.title,
+      listName: widget.task.listName,
+      notes: widget.task.notes,
+      isCompleted: widget.task.isCompleted,
+      isStarred: widget.task.isStarred,
+      dueDate: widget.task.dueDate,
+      repeat: widget.task.repeat,
+      subTasks: updatedSubTasks,
+    );
+    widget.onUpdate(newTask);
   }
 
   @override
@@ -72,26 +124,36 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   onTap: () async {
                     final d = await showDatePicker(
                       context: context,
-                      initialDate: DateTime.now(),
+                      initialDate: widget.task.dueDate ?? DateTime.now(),
                       firstDate: DateTime.now(),
                       lastDate: DateTime(2100),
                     );
                     if (d != null && context.mounted) {
                       final t = await showTimePicker(
                         context: context,
-                        initialTime: TimeOfDay.now(),
+                        initialTime: widget.task.dueDate != null
+                            ? TimeOfDay.fromDateTime(widget.task.dueDate!)
+                            : TimeOfDay.now(),
                       );
                       if (t != null) {
-                        setState(() {
-                          widget.task.dueDate = DateTime(
+                        final newTask = Task(
+                          id: widget.task.id,
+                          title: widget.task.title,
+                          listName: widget.task.listName,
+                          notes: widget.task.notes,
+                          isCompleted: widget.task.isCompleted,
+                          isStarred: widget.task.isStarred,
+                          dueDate: DateTime(
                             d.year,
                             d.month,
                             d.day,
                             t.hour,
                             t.minute,
-                          );
-                          _save();
-                        });
+                          ),
+                          repeat: widget.task.repeat,
+                          subTasks: widget.task.subTasks,
+                        );
+                        widget.onUpdate(newTask);
                       }
                     }
                   },
@@ -157,10 +219,20 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                 ),
                               )
                               .toList(),
-                          onChanged: (v) => setState(() {
-                            widget.task.repeat = v!;
-                            _save();
-                          }),
+                          onChanged: (v) {
+                            final newTask = Task(
+                              id: widget.task.id,
+                              title: widget.task.title,
+                              listName: widget.task.listName,
+                              notes: widget.task.notes,
+                              isCompleted: widget.task.isCompleted,
+                              isStarred: widget.task.isStarred,
+                              dueDate: widget.task.dueDate,
+                              repeat: v!,
+                              subTasks: widget.task.subTasks,
+                            );
+                            widget.onUpdate(newTask);
+                          },
                         ),
                       ),
                     ],
@@ -186,10 +258,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       ),
                     ),
                     value: s.isCompleted,
-                    onChanged: (v) => setState(() {
-                      s.isCompleted = v!;
-                      _save();
-                    }),
+                    onChanged: (v) => _toggleSubTask(s, v),
                   ),
                 ),
                 TextField(
@@ -201,13 +270,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   ),
                   onSubmitted: (v) {
                     if (v.isNotEmpty) {
-                      setState(() {
-                        widget.task.subTasks.add(
-                          SubTask(id: DateTime.now().toString(), title: v),
-                        );
-                        sC.clear();
-                        _save();
-                      });
+                      _addSubTask(v);
+                      sC.clear();
                     }
                   },
                 ),

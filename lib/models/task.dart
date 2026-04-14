@@ -35,17 +35,31 @@ class Task {
     'repeat': repeat.index,
   };
 
-  factory Task.fromMap(Map<String, dynamic> map) => Task(
-    id: map['id'],
-    title: map['title'],
-    isCompleted: map['isCompleted'],
-    listName: map['listName'] ?? map['list'] ?? 'My Tasks',
-    isStarred: map['isStarred'],
-    dueDate: map['dueDate'] != null ? DateTime.parse(map['dueDate']) : null,
-    notes: map['notes'],
-    repeat: Repeat.values[map['repeat'] ?? 0],
-    subTasks: (map['subTasks'] as List).map((s) => SubTask.fromMap(s)).toList(),
-  );
+  factory Task.fromMap(Map<String, dynamic> map) {
+    final repeatIndex = (map['repeat'] as int?) ?? 0;
+    final safeRepeatIndex = repeatIndex.clamp(0, Repeat.values.length - 1);
+
+    List<SubTask> subTasksList = [];
+    if (map['subTasks'] != null && map['subTasks'] is List) {
+      subTasksList = (map['subTasks'] as List)
+          .map((s) => SubTask.fromMap(s as Map<String, dynamic>))
+          .toList();
+    }
+
+    return Task(
+      id: map['id'] ?? DateTime.now().microsecondsSinceEpoch.toString(),
+      title: map['title'] ?? '',
+      isCompleted: map['isCompleted'] ?? false,
+      listName: map['listName'] ?? map['list'] ?? 'My Tasks',
+      isStarred: map['isStarred'] ?? false,
+      dueDate: map['dueDate'] != null
+          ? DateTime.tryParse(map['dueDate'])
+          : null,
+      notes: map['notes'] ?? '',
+      repeat: Repeat.values[safeRepeatIndex],
+      subTasks: subTasksList,
+    );
+  }
 }
 
 class SubTask {
@@ -55,9 +69,15 @@ class SubTask {
 
   SubTask({required this.id, required this.title, this.isCompleted = false});
 
-  Map<String, dynamic> toMap() => {'id': id, 'title': title, 'isCompleted': isCompleted};
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'title': title,
+    'isCompleted': isCompleted,
+  };
 
   factory SubTask.fromMap(Map<String, dynamic> m) => SubTask(
-    id: m['id'], title: m['title'], isCompleted: m['isCompleted'],
+    id: m['id'] ?? '',
+    title: m['title'] ?? '',
+    isCompleted: m['isCompleted'] ?? false,
   );
 }

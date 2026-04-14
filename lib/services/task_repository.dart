@@ -15,7 +15,16 @@ class TaskRepository {
   List<Task> loadTasks() {
     final data = _prefs.getString(_tasksKey);
     if (data == null) return [];
-    return (jsonDecode(data) as List).map((i) => Task.fromMap(i)).toList();
+    try {
+      final decoded = jsonDecode(data);
+      if (decoded is! List) return [];
+      return decoded
+          .map((i) => Task.fromMap(i as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('Error loading tasks: $e');
+      return [];
+    }
   }
 
   Future<void> saveTasks(List<Task> tasks) async {
@@ -28,9 +37,16 @@ class TaskRepository {
   List<TaskListModel> loadLists() {
     final data = _prefs.getString(_listsKey);
     if (data == null) return _defaultLists();
-    return (jsonDecode(data) as List)
-        .map((i) => TaskListModel.fromMap(i))
-        .toList();
+    try {
+      final decoded = jsonDecode(data);
+      if (decoded is! List) return _defaultLists();
+      return decoded
+          .map((i) => TaskListModel.fromMap(i as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('Error loading lists: $e');
+      return _defaultLists();
+    }
   }
 
   Future<void> saveLists(List<TaskListModel> lists) async {
