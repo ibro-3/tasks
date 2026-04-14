@@ -20,6 +20,6 @@ class TaskListModel {
   factory TaskListModel.fromMap(Map<String, dynamic> map) => TaskListModel(
     name: map['name'],
     iconCode: map['iconCode'] ?? Icons.folder.codePoint,
-    colorValue: map['colorValue'] ?? Colors.indigo.value,
+    colorValue: map['colorValue'] ?? Colors.indigo.toARGB32(),
   );
 }

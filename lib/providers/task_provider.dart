@@ -8,7 +8,7 @@ import '../services/notification_service.dart';
 
 class TaskProvider extends ChangeNotifier {
   final TaskRepository _repository;
-  
+
   List<Task> _tasks = [];
   List<TaskListModel> _lists = [];
   String _currentList = 'My Tasks';
@@ -24,18 +24,32 @@ class TaskProvider extends ChangeNotifier {
   Future<void> loadData() async {
     _tasks = _repository.loadTasks();
     _lists = _repository.loadLists();
-    
+
     bool saveNeeded = false;
     if (!_lists.any((l) => l.name == 'My Day')) {
-      _lists.insert(0, TaskListModel(name: 'My Day', iconCode: Icons.sunny.codePoint, colorValue: Colors.deepPurple.value));
+      _lists.insert(
+        0,
+        TaskListModel(
+          name: 'My Day',
+          iconCode: Icons.sunny.codePoint,
+          colorValue: Colors.deepPurple.toARGB32(),
+        ),
+      );
       saveNeeded = true;
     }
     if (!_lists.any((l) => l.name == 'My Tasks')) {
-      _lists.insert(1, TaskListModel(name: 'My Tasks', iconCode: Icons.check_circle_outline.codePoint, colorValue: Colors.indigo.value));
+      _lists.insert(
+        1,
+        TaskListModel(
+          name: 'My Tasks',
+          iconCode: Icons.check_circle_outline.codePoint,
+          colorValue: Colors.indigo.toARGB32(),
+        ),
+      );
       saveNeeded = true;
     }
     if (saveNeeded) await _saveLists();
-    
+
     notifyListeners();
   }
 
@@ -53,24 +67,36 @@ class TaskProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addTask(String title, {bool isStarred = false, DateTime? dueDate, String? notes, String? listName}) {
+  void addTask(
+    String title, {
+    bool isStarred = false,
+    DateTime? dueDate,
+    String? notes,
+    String? listName,
+  }) {
     String finalTitle = title;
     DateTime? finalDate = dueDate;
-    
+
     if (finalDate == null) {
       final lower = title.toLowerCase();
       if (lower.contains('today')) {
         finalDate = DateTime.now();
-        finalTitle = title.replaceAll(RegExp(r'\btoday\b', caseSensitive: false), '').trim();
+        finalTitle = title
+            .replaceAll(RegExp(r'\btoday\b', caseSensitive: false), '')
+            .trim();
       } else if (lower.contains('tomorrow')) {
         finalDate = DateTime.now().add(const Duration(days: 1));
-        finalTitle = title.replaceAll(RegExp(r'\btomorrow\b', caseSensitive: false), '').trim();
+        finalTitle = title
+            .replaceAll(RegExp(r'\btomorrow\b', caseSensitive: false), '')
+            .trim();
       }
     }
-    
+
     String targetList = listName ?? _currentList;
-    if (targetList == 'Important' || targetList == 'Completed') targetList = 'My Tasks';
-    
+    if (targetList == 'Important' || targetList == 'Completed') {
+      targetList = 'My Tasks';
+    }
+
     final newTask = Task(
       id: DateTime.now().toString(),
       title: finalTitle,
@@ -79,7 +105,7 @@ class TaskProvider extends ChangeNotifier {
       dueDate: finalDate,
       notes: notes ?? '',
     );
-    
+
     _tasks.add(newTask);
     NotificationService.schedule(newTask);
     _saveTasks();
@@ -98,7 +124,7 @@ class TaskProvider extends ChangeNotifier {
       } else {
         _tasks.add(task);
       }
-      
+
       if (task.isCompleted) {
         NotificationService.cancel(task);
         _handleRepeat(task);
@@ -112,13 +138,19 @@ class TaskProvider extends ChangeNotifier {
 
   void _handleRepeat(Task task) {
     if (task.repeat != Repeat.none && task.dueDate != null) {
-      final next = DateTime(task.dueDate!.year, task.dueDate!.month, task.dueDate!.day)
-          .add(task.repeat == Repeat.daily 
-              ? const Duration(days: 1) 
-              : task.repeat == Repeat.weekly 
-                  ? const Duration(days: 7) 
-                  : const Duration(days: 30));
-      
+      final next =
+          DateTime(
+            task.dueDate!.year,
+            task.dueDate!.month,
+            task.dueDate!.day,
+          ).add(
+            task.repeat == Repeat.daily
+                ? const Duration(days: 1)
+                : task.repeat == Repeat.weekly
+                ? const Duration(days: 7)
+                : const Duration(days: 30),
+          );
+
       final newTask = Task(
         id: DateTime.now().toString(),
         title: task.title,
@@ -150,7 +182,9 @@ class TaskProvider extends ChangeNotifier {
   void deleteList(String name) {
     _lists.removeWhere((l) => l.name == name);
     _tasks.removeWhere((t) => t.listName == name);
-    if (_currentList == name) _currentList = 'My Tasks';
+    if (_currentList == name) {
+      _currentList = 'My Tasks';
+    }
     _saveLists();
     _saveTasks();
     notifyListeners();
@@ -161,17 +195,18 @@ class TaskProvider extends ChangeNotifier {
       if (_currentList == 'Important') return t.isStarred;
       if (_currentList == 'Completed') return t.isCompleted;
       return t.listName == _currentList && !t.isCompleted;
-    }).toList()
-      ..sort((a, b) {
-        if (a.isCompleted != b.isCompleted) return a.isCompleted ? 1 : -1;
-        return (a.dueDate ?? DateTime(2100)).compareTo(b.dueDate ?? DateTime(2100));
-      });
+    }).toList()..sort((a, b) {
+      if (a.isCompleted != b.isCompleted) return a.isCompleted ? 1 : -1;
+      return (a.dueDate ?? DateTime(2100)).compareTo(
+        b.dueDate ?? DateTime(2100),
+      );
+    });
   }
 
   Map<String, List<Task>> get groupedTasks {
     final active = filteredTasks;
     final grouped = <String, List<Task>>{};
-    
+
     for (var t in active) {
       String key = "Later";
       if (t.dueDate == null) {
@@ -180,19 +215,27 @@ class TaskProvider extends ChangeNotifier {
         final d = DateTime(t.dueDate!.year, t.dueDate!.month, t.dueDate!.day);
         final now = DateTime.now();
         final today = DateTime(now.year, now.month, now.day);
-        if (d.isBefore(today)) key = "Overdue";
-        else if (d.isAtSameMomentAs(today)) key = "Today";
-        else if (d.difference(today).inDays == 1) key = "Tomorrow";
+        if (d.isBefore(today)) {
+          key = 'Overdue';
+        } else if (d.isAtSameMomentAs(today)) {
+          key = 'Today';
+        } else if (d.difference(today).inDays == 1) {
+          key = 'Tomorrow';
+        }
       }
-      
-      if (!grouped.containsKey(key)) grouped[key] = [];
+
+      if (!grouped.containsKey(key)) {
+        grouped[key] = [];
+      }
       grouped[key]!.add(t);
     }
-    
+
     return grouped;
   }
 
   List<Task> searchTasks(String query) {
-    return _tasks.where((t) => t.title.toLowerCase().contains(query.toLowerCase())).toList();
+    return _tasks
+        .where((t) => t.title.toLowerCase().contains(query.toLowerCase()))
+        .toList();
   }
 }
